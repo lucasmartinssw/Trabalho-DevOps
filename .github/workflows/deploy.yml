@@ -1,0 +1,48 @@
+# Define o nome do Workflow
+name: Deploy to Github Pages
+
+# Iniciar
+on:
+  # Enviar o código
+  push:
+    # Filtra o gatilho. Certifique-se de que os nomes das branches estão corretos
+    branches: ["developer", "master", "release"]
+  # Isso cria um botão no site do Github
+  workflow_dispatch:
+
+# Permissões necessárias para o deploy
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Integridade das páginas
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+# Lista de tarefas
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployments.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4 
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      - name: Explorando o run  
+        run: lsb_release -a && free -h
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3 # Versão estável v3 ou v4
+        with:
+          path: '.'
+        
+      - name: Deploy to github pages
+        id: deployments
+        uses: actions/deploy-pages@v4
