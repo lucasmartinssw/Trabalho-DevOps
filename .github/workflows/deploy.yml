@@ -66,12 +66,15 @@ jobs:
       # Verificação de Links e Imagens (Etapa 1)
       - name: Validar integridade de links e imagens
         run: |
-          # Extrai caminhos de src e href e testa se o arquivo local existe
           grep -oE 'src="([^"#]+)"|href="([^"#]+)"' index.html | cut -d'"' -f2 | while read path; do
-            if [[ $path == http* ]]; then
-              curl --output /dev/null --silent --head --fail "$path" || echo "Link externo quebrado: $path"
+            # Ignora links de email (mailto) e âncoras internas (#)
+            if [[ $path == mailto:* || $path == \#* ]]; then
+              continue
+            elif [[ $path == http* ]]; then
+              # Testa links externos, mas não falha a pipeline se o site bloquear o robô
+              curl --output /dev/null --silent --head --fail "$path" || echo "Aviso: Link externo pode estar inacessível: $path"
             elif [ ! -f "$path" ]; then
-              echo "Arquivo local não encontrado: $path"
+              echo "ERRO: Arquivo local não encontrado: $path"
               exit 1
             fi
           done
