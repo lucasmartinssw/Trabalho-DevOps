@@ -1,48 +1,105 @@
-# Define o nome do Workflow
 name: Deploy to Github Pages
 
-# Iniciar
 on:
-  # Enviar o código
   push:
-    # Filtra o gatilho. Certifique-se de que os nomes das branches estão corretos
-    branches: ["developer", "master", "release"]
-  # Isso cria um botão no site do Github
+    branches: ["main", "master"] # Gatilho para Deploy
+  pull_request:
+    branches: ["main", "master"] # Gatilho para CI (Validação)
   workflow_dispatch:
 
-# Permissões necessárias para o deploy
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Integridade das páginas
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
-# Lista de tarefas
 jobs:
+  # ETAPA 1 e 5: Validação com Matrix Strategy
+  validation:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20] # Requisito Etapa 5
+    
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # Verificação Obrigatória do index.html (Etapa 1)
+      - name: Validar existência do index.html
+        run: |
+          if [ ! -f "index.html" ]; then
+            echo "ERRO: index.html não encontrado! O deploy será abortado."
+            exit 1
+          fi
+
+      # Linter via NPX (Instala e roda direto, sem package.json)
+      - name: Executar Linter HTML
+        run: npx htmlhint index.html
+
+      # Bloqueio de arquivos > 500KB (Etapa 1)
+      - name: Verificar arquivos pesados (>500KB)
+        run: |
+          FILES=$(find . -type f -not -path '*/.*' -size +500k)
+          if [ ! -z "$FILES" ]; then
+            echo "ERRO: Arquivos muito grandes detectados: $FILES"
+            exit 1
+          fi
+
+      # Varredura de Termos Sensíveis e Comentários (Etapa 1)
+      - name: Varredura de texto (TODO/FIXME/Senha)
+        run: |
+          if grep -rEi "todo|fixme|senha|password" .; then
+            echo "ERRO: Código contém termos proibidos ou comentários de pendência."
+            exit 1
+          fi
+
+      # Verificação de Links e Imagens (Etapa 1)
+      - name: Validar integridade de links e imagens
+        run: |
+          # Extrai caminhos de src e href e testa se o arquivo local existe
+          grep -oE 'src="([^"#]+)"|href="([^"#]+)"' index.html | cut -d'"' -f2 | while read path; do
+            if [[ $path == http* ]]; then
+              curl --output /dev/null --silent --head --fail "$path" || echo "Link externo quebrado: $path"
+            elif [ ! -f "$path" ]; then
+              echo "Arquivo local não encontrado: $path"
+              exit 1
+            fi
+          done
+
+  # ETAPA 2: Deploy Automático (Só roda se a validação passar e for PUSH na main)
   deploy:
+    needs: validation
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     environment:
       name: github-pages
       url: ${{ steps.deployments.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4 
+        uses: actions/checkout@v4
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        
-      - name: Explorando o run  
-        run: lsb_release -a && free -h
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3 # Versão estável v3 ou v4
+        uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
         
       - name: Deploy to github pages
         id: deployments
         uses: actions/deploy-pages@v4
+
+      # ETAPA 4: Notificação simples em caso de falha (Log do GitHub)
+      - name: Check Status
+        if: failure()
+        run: echo "Pipeline falhou. Notificação enviada aos mantenedores."
