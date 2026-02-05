@@ -57,7 +57,8 @@ jobs:
       # Varredura de Termos Sensíveis e Comentários (Etapa 1)
       - name: Varredura de texto (TODO/FIXME/Senha)
         run: |
-          if grep -rEi "todo|fixme|senha|password" .; then
+          # Varre apenas arquivos de código, ignorando a pasta .git e o README
+          if grep -rEi "todo|fixme|senha|password" . --exclude-dir=.git --exclude=README.md --exclude=deploy.yml; then
             echo "ERRO: Código contém termos proibidos ou comentários de pendência."
             exit 1
           fi
